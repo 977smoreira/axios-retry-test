@@ -309,3 +309,66 @@ Error: Request failed with status code 500
   toJSON: [Function: toJSON]
 }
 ```
+
+# Axios client configured with interceptor
+```javascript
+const axiosRetry = require('axios-retry');
+const axios = require('axios');
+
+let errorCount = 0;
+
+function successInterceptor(data) {
+    return data;
+}
+
+function errorInterceptor(error) {
+    errorCount++
+    const data = error.response?.statusText || error.message;
+    if (error.code === 'ECONNABORTED' || (error.response && error.response.status >= 500)) {
+        return Promise.reject(new Error(` ${errorCount}: IF ERROR: ${data}`));
+    }
+
+    return Promise.reject(new Error(`${errorCount}: ELSE ERROR: ${data}`));
+}
+
+axiosRetry(axios, {
+    retries: 3,
+    retryDelay: axiosRetry.exponentialDelay,
+    onRetry: (retryCount, error, requestConfig) => {
+        console.warn(
+            `${error.message} for ${requestConfig.method?.toUpperCase()} ${requestConfig.url
+            }! Retry attempt: ${retryCount}`,
+        );
+    }
+});
+
+axios.interceptors.response.use(successInterceptor, errorInterceptor);
+
+axios.get('http://localhost:3000')
+    .then(function (response) {
+        // handle success
+        console.log(response);
+    })
+    .catch(function (error) {
+        // handle error
+        console.log(error);
+    });
+```
+
+## Dummy server log
+```
+2023-03-15T12:04:59.644Z HIT
+2023-03-15T12:04:59.886Z HIT
+2023-03-15T12:05:00.357Z HIT
+2023-03-15T12:05:01.299Z HIT
+```
+
+## Axios client log
+```
+Request failed with status code 500 for GET http://localhost:3000! Retry attempt: 1
+Request failed with status code 500 for GET http://localhost:3000! Retry attempt: 2
+Request failed with status code 500 for GET http://localhost:3000! Retry attempt: 3
+Error: 4: ELSE ERROR: 3: ELSE ERROR: 2: ELSE ERROR:  1: IF ERROR: Internal Server Error
+    at errorInterceptor (/home/sinayra/Documents/axios-retry-test/axios-client/index.js:17:27)
+    at processTicksAndRejections (internal/process/task_queues.js:95:5)
+```
